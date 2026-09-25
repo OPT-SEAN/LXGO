@@ -1,0 +1,760 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>纸船夜航</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=ZCOOL+XiaoWei&display=swap">
+<style>
+  :root {
+    --ink: #0b1622;
+    --paper: #f2eadb;
+    --paper-dim: #a9b2ba;
+    --lantern: #ffb347;
+    --ember: #ff7a3d;
+    --panel: rgba(11, 22, 34, 0.76);
+    --line: rgba(242, 234, 219, 0.16);
+    color-scheme: dark;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: none;
+  }
+  #stage { position: fixed; inset: 0; display: block; width: 100%; height: 100%; }
+
+  .hud {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+    pointer-events: none;
+  }
+  .stat { display: grid; gap: 4px; }
+  .stat.right { justify-items: end; text-align: right; }
+  .label { font-size: 11px; letter-spacing: 0.2em; color: var(--paper-dim); }
+  .big {
+    font-family: "ZCOOL XiaoWei", "Songti SC", serif;
+    font-size: 42px; line-height: 1; color: var(--lantern);
+    font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 18px rgba(255, 154, 60, 0.45);
+  }
+  .sub { font-size: 13px; font-variant-numeric: tabular-nums; opacity: 0.88; }
+  .best { font-family: "ZCOOL XiaoWei", "Songti SC", serif; font-size: 24px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #mute {
+    pointer-events: auto; margin-top: 4px;
+    appearance: none; background: transparent; color: var(--paper-dim);
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 5px 10px; font: 12px/1 inherit; font-family: inherit; cursor: pointer;
+  }
+
+  .overlay {
+    position: fixed; inset: 0; z-index: 3;
+    display: grid; place-items: center;
+    padding: 24px 16px;
+    background: radial-gradient(ellipse at 50% 45%, rgba(11, 22, 34, 0.15), rgba(11, 22, 34, 0.7));
+  }
+  .card {
+    width: 100%; max-width: 360px; box-sizing: border-box;
+    padding: 28px 24px 22px;
+    display: grid; gap: 14px;
+    background: var(--panel);
+    border: 1px solid var(--line); border-radius: 14px;
+    -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  }
+  .eyebrow { margin: 0; font-size: 11px; letter-spacing: 0.24em; color: var(--lantern); }
+  h1 {
+    margin: 0;
+    font-family: "ZCOOL XiaoWei", "Songti SC", serif; font-weight: 400;
+    font-size: 46px; line-height: 1.05; letter-spacing: 0.06em;
+    text-wrap: balance;
+  }
+  .card p { margin: 0; font-size: 14px; line-height: 1.75; opacity: 0.9; }
+  .results {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    padding: 12px 0; border-block: 1px solid var(--line);
+  }
+  .results div { display: grid; gap: 2px; }
+  .results b {
+    font-family: "ZCOOL XiaoWei", "Songti SC", serif; font-weight: 400;
+    font-size: 28px; line-height: 1.1; color: var(--lantern);
+    font-variant-numeric: tabular-nums;
+  }
+  .record { color: var(--lantern); font-size: 13px; }
+  .keys {
+    list-style: none; margin: 0; padding: 12px 0 0;
+    border-top: 1px solid var(--line);
+    display: grid; gap: 8px; font-size: 13px; color: var(--paper-dim);
+  }
+  .results + .keys { border-top: 0; padding-top: 0; }
+  kbd {
+    display: inline-block; min-width: 14px; margin-right: 3px;
+    padding: 1px 6px; text-align: center;
+    font: 12px/1.5 inherit; font-family: inherit; color: var(--paper);
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+  }
+  .go {
+    appearance: none; border: 0; border-radius: 999px; cursor: pointer;
+    padding: 13px 20px; margin-top: 4px;
+    font: 500 16px/1 "Noto Sans SC", sans-serif; letter-spacing: 0.3em; text-indent: 0.3em;
+    color: #2a1405;
+    background: linear-gradient(#ffc76e, #ff8a3d);
+    box-shadow: 0 6px 24px rgba(255, 138, 61, 0.35);
+  }
+  .go:focus-visible, #mute:focus-visible { outline: 2px solid var(--paper); outline-offset: 3px; }
+  .hint { text-align: center; font-size: 12px !important; color: var(--paper-dim); }
+</style>
+
+<canvas id="stage"></canvas>
+
+<div class="hud">
+  <div class="stat">
+    <span class="label">得分</span>
+    <span id="score" class="big">0</span>
+    <span class="sub"><span id="dist">0</span> m · 河灯 <span id="lanterns">0</span></span>
+  </div>
+  <div class="stat right">
+    <span class="label">最佳</span>
+    <span id="best" class="best">0</span>
+    <button id="mute" type="button">声音 开</button>
+  </div>
+</div>
+
+<div id="overlay" class="overlay">
+  <div class="card">
+    <p id="eyebrow" class="eyebrow">3D 小游戏 · DEMO</p>
+    <h1 id="title">纸船夜航</h1>
+    <p id="msg">一只纸船顺流而下。避开礁石与浮木，拾起沿河漂来的河灯，看你能漂多远。</p>
+    <div id="results" class="results" hidden>
+      <div><span class="label">得分</span><b id="rScore">0</b></div>
+      <div><span class="label">里程</span><b id="rDist">0</b></div>
+      <div><span class="label">河灯</span><b id="rLanterns">0</b></div>
+    </div>
+    <ul class="keys">
+      <li><kbd>←</kbd><kbd>→</kbd> 或 <kbd>A</kbd><kbd>D</kbd> 换道</li>
+      <li>手机：点屏幕左半边或右半边</li>
+      <li>一盏河灯 25 分，每漂 1 米 1 分</li>
+    </ul>
+    <button id="go" class="go" type="button">起航</button>
+    <p class="hint">按 Enter 也可开始</p>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+  const reduceMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- 渲染器与场景 ----------
+  const canvas = $('stage');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const INK = 0x0b1622;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(INK);
+  scene.fog = new THREE.Fog(INK, 26, 105);
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 400);
+
+  scene.add(new THREE.HemisphereLight(0x5b7fa6, 0x0b1622, 0.6));
+  const moonLight = new THREE.DirectionalLight(0xbcd3ff, 0.6);
+  moonLight.position.set(-20, 30, -40);
+  scene.add(moonLight);
+
+  // 径向光晕贴图，给月亮、河灯、窗户共用
+  const GLOW = (() => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+    r.addColorStop(0, 'rgba(255,255,255,1)');
+    r.addColorStop(0.22, 'rgba(255,255,255,0.55)');
+    r.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = r;
+    g.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  })();
+  function glow(color, size, opacity = 1, fog = true) {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: GLOW, color, transparent: true, opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog,
+    }));
+    s.scale.set(size, size, 1);
+    return s;
+  }
+
+  // ---------- 天空：月亮、星星、孔明灯 ----------
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(6, 48), new THREE.MeshBasicMaterial({ color: 0xf6ecd0, fog: false }));
+  moon.position.set(-38, 34, -190);
+  scene.add(moon);
+  const halo = glow(0xcfe0ff, 46, 0.45, false);
+  halo.position.set(-38, 34, -189);
+  scene.add(halo);
+
+  {
+    const pts = [];
+    for (let i = 0; i < 520; i++) pts.push(rand(-220, 220), rand(12, 140), rand(-270, -120));
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 0.9, fog: false, transparent: true, opacity: 0.8 })));
+  }
+
+  const skyLanterns = [];
+  for (let i = 0; i < 14; i++) {
+    const s = glow(0xff9a4a, rand(1.6, 3), rand(0.5, 0.9), false);
+    s.position.set(rand(-60, 60), rand(4, 50), rand(-160, -70));
+    s.userData.v = rand(0.4, 1.1);
+    scene.add(s);
+    skyLanterns.push(s);
+  }
+
+  // ---------- 河面：顶点位移 + 按网格步长平移，避免起伏“游动” ----------
+  const W_LEN = 150, W_SEG_Z = 90, W_CELL = W_LEN / W_SEG_Z, W_Z = -W_LEN / 2 + 15;
+  const waterGeo = new THREE.PlaneGeometry(70, W_LEN, 42, W_SEG_Z);
+  waterGeo.rotateX(-Math.PI / 2);
+  const wPos = waterGeo.attributes.position;
+  const wBase = Float32Array.from(wPos.array);
+  const water = new THREE.Mesh(waterGeo, new THREE.MeshStandardMaterial({
+    color: 0x123650, roughness: 0.8, metalness: 0, flatShading: true,
+  }));
+  scene.add(water);
+
+  function waveH(x, wz, t) {
+    return Math.sin(x * 0.55 + t * 1.1) * 0.08
+         + Math.sin(wz * 0.42 + t * 0.7) * 0.12
+         + Math.sin((x + wz) * 0.9 + t * 1.7) * 0.05;
+  }
+  function updateWater(t, travel) {
+    const off = travel % W_CELL;
+    water.position.z = W_Z + off;
+    const shift = travel - off; // 河面花纹在世界中的累计位移
+    for (let i = 0; i < wPos.count; i++) {
+      const x = wBase[i * 3], z = wBase[i * 3 + 2] + W_Z;
+      wPos.array[i * 3 + 1] = waveH(x, z - shift, t);
+    }
+    wPos.needsUpdate = true;
+  }
+
+  // ---------- 两岸：同样的平移技巧，山丘随水流后退 ----------
+  const L_CELL = 2.5;
+  function landH(x, wz) {
+    const ax = Math.abs(x);
+    const e = Math.min(1, Math.max(0, (ax - 8.5) / 4));
+    const s = e * e * (3 - 2 * e);
+    const n = Math.sin(wz * 0.11 + ax * 0.25) * 0.5
+            + Math.sin(wz * 0.23 - ax * 0.4) * 0.3
+            + Math.sin(wz * 0.05 + 1.3) * 0.6;
+    return -0.5 + s * (1.3 + n * 1.1 + (ax - 8.5) * 0.08);
+  }
+  const landMat = new THREE.MeshStandardMaterial({ color: 0x1a2b2a, roughness: 1, flatShading: true });
+  const lands = [-1, 1].map((side) => {
+    const g = new THREE.PlaneGeometry(28, W_LEN, 14, W_LEN / L_CELL);
+    g.rotateX(-Math.PI / 2);
+    g.translate(side * 21, 0, 0);
+    const m = new THREE.Mesh(g, landMat);
+    scene.add(m);
+    return { mesh: m, pos: g.attributes.position, base: Float32Array.from(g.attributes.position.array), step: null };
+  });
+  function updateLand(travel) {
+    const off = travel % L_CELL;
+    const step = travel - off;
+    for (const l of lands) {
+      l.mesh.position.z = W_Z + off;
+      if (l.step === step) continue;
+      l.step = step;
+      for (let i = 0; i < l.pos.count; i++) {
+        const x = l.base[i * 3], z = l.base[i * 3 + 2] + W_Z;
+        l.pos.array[i * 3 + 1] = landH(x, z - step);
+      }
+      l.pos.needsUpdate = true;
+    }
+  }
+
+  // ---------- 岸边装饰：树、亮着窗的小屋 ----------
+  const treeMats = [0x1f3d3a, 0x264a44, 0x183230].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1, flatShading: true }));
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x2e2420, roughness: 1 });
+  const decor = [];
+  function makeTree() {
+    const g = new THREE.Group();
+    const h = rand(2.4, 4.2), r = rand(0.8, 1.4);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 6), pick(treeMats));
+    cone.position.y = 0.5 + h / 2;
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.6, 5), trunkMat);
+    trunk.position.y = 0.3;
+    g.add(cone, trunk);
+    return g;
+  }
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x2b2a33, roughness: 1, flatShading: true });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x141c26, roughness: 1, flatShading: true });
+  const winMat = new THREE.MeshBasicMaterial({ color: 0xffb65c });
+  function makeHouse(side) {
+    const g = new THREE.Group();
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.2, 1.5), wallMat);
+    wall.position.y = 0.6;
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(1.45, 0.9, 4), roofMat);
+    roof.position.y = 1.65;
+    roof.rotation.y = Math.PI / 4;
+    const win = new THREE.Mesh(new THREE.PlaneGeometry(0.4, 0.34), winMat);
+    win.position.set(-side * 0.91, 0.65, 0);
+    win.rotation.y = -side * Math.PI / 2;
+    const wg = glow(0xff9a4a, 2.4, 0.8);
+    wg.position.set(-side * 1.1, 0.65, 0);
+    g.add(wall, roof, win, wg);
+    g.rotation.y = rand(-0.25, 0.25);
+    return g;
+  }
+  function placeDecor(d, z, travel) {
+    const side = d.side;
+    const x = d.kind === 'house' ? side * rand(10, 12.5) : side * rand(10.5, 26);
+    d.obj.position.set(x, landH(x, z - travel) - 0.1, z);
+  }
+  for (let i = 0; i < 70; i++) {
+    const side = i % 2 ? 1 : -1;
+    const d = { kind: 'tree', side, obj: makeTree() };
+    scene.add(d.obj);
+    placeDecor(d, rand(-130, 12), 0);
+    decor.push(d);
+  }
+  for (let i = 0; i < 6; i++) {
+    const side = i % 2 ? 1 : -1;
+    const d = { kind: 'house', side, obj: makeHouse(side) };
+    scene.add(d.obj);
+    placeDecor(d, rand(-130, 12), 0);
+    decor.push(d);
+  }
+
+  // ---------- 纸船 ----------
+  const boat = new THREE.Group();
+  {
+    const B0 = [0, 0, -0.6], B1 = [0, 0, 0.6];
+    const L0 = [-0.42, 0.38, -1.05], L1 = [-0.42, 0.38, 1.05];
+    const R0 = [0.42, 0.38, -1.05], R1 = [0.42, 0.38, 1.05];
+    const S0 = [0, 0.38, -0.62], S1 = [0, 0.38, 0.62], ST = [0, 1.15, 0.05];
+    const v = [];
+    const tri = (...p) => p.forEach((q) => v.push(...q));
+    tri(B0, B1, L1); tri(B0, L1, L0);   // 左舷
+    tri(B0, R0, R1); tri(B0, R1, B1);   // 右舷
+    tri(B0, L0, R0); tri(B1, R1, L1);   // 船头船尾
+    tri(S0, S1, ST);                     // 中间折起的帆
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+    g.computeVertexNormals();
+    const hull = new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+      color: 0xe8dfcf, emissive: 0x16110a, roughness: 0.9, flatShading: true, side: THREE.DoubleSide,
+    }));
+    hull.position.y = 0.02;
+    boat.add(hull);
+
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 0.14), new THREE.MeshBasicMaterial({ color: 0xffc070 }));
+    lamp.position.set(0, 1.26, 0.05);
+    boat.add(lamp);
+    const lampGlow = glow(0xff9a3c, 1.8, 0.95);
+    lampGlow.position.copy(lamp.position);
+    boat.add(lampGlow);
+  }
+  const boatLight = new THREE.PointLight(0xffa24a, 1.1, 10, 2);
+  boatLight.position.set(0, 2.4, -1.4);
+  boat.add(boatLight);
+  scene.add(boat);
+
+  // ---------- 船尾波纹 ----------
+  const ringGeo = new THREE.RingGeometry(0.34, 0.44, 24);
+  ringGeo.rotateX(-Math.PI / 2);
+  const wake = [];
+  for (let i = 0; i < 36; i++) {
+    const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xcfe3ff, transparent: true, opacity: 0, depthWrite: false }));
+    m.visible = false;
+    scene.add(m);
+    wake.push({ m, life: 0 });
+  }
+  let wakeIdx = 0;
+  function emitWake(x) {
+    const w = wake[wakeIdx++ % wake.length];
+    w.life = 1.2;
+    w.m.visible = true;
+    w.m.position.set(x, 0.16, 1.0);
+    w.m.scale.setScalar(1);
+  }
+
+  // ---------- 拾灯时的火星 ----------
+  const sparks = [];
+  for (let i = 0; i < 48; i++) {
+    const s = glow(0xffb347, 0.5, 0);
+    s.visible = false;
+    scene.add(s);
+    sparks.push({ s, life: 0, v: new THREE.Vector3() });
+  }
+  let sparkIdx = 0;
+  function burst(p) {
+    for (let i = 0; i < 12; i++) {
+      const k = sparks[sparkIdx++ % sparks.length];
+      k.life = 0.8;
+      k.s.visible = true;
+      k.s.position.copy(p);
+      k.v.set(rand(-2, 2), rand(1.5, 4), rand(-1.5, 1.5));
+    }
+  }
+
+  // ---------- 障碍与河灯 ----------
+  const LANES = [-2.2, 0, 2.2];
+  const rockGeo = new THREE.DodecahedronGeometry(0.75, 0);
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x56606e, roughness: 0.95, flatShading: true });
+  const foamGeo = new THREE.RingGeometry(0.85, 1.2, 20);
+  foamGeo.rotateX(-Math.PI / 2);
+  const foamMat = new THREE.MeshBasicMaterial({ color: 0xdbe8ff, transparent: true, opacity: 0.25, depthWrite: false });
+  const logGeo = new THREE.CylinderGeometry(0.26, 0.3, 1.9, 7);
+  logGeo.rotateZ(Math.PI / 2);
+  const logMat = new THREE.MeshStandardMaterial({ color: 0x6a4d36, roughness: 1, flatShading: true });
+  const baseGeo = new THREE.CylinderGeometry(0.46, 0.3, 0.16, 8);
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0xe9b6a8, emissive: 0x5a2a14, roughness: 0.8, flatShading: true });
+  const bodyGeo = new THREE.CylinderGeometry(0.2, 0.25, 0.36, 6);
+  const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffb347 });
+
+  function makeRock() {
+    const g = new THREE.Group();
+    const a = new THREE.Mesh(rockGeo, rockMat);
+    a.scale.set(rand(0.9, 1.15), rand(0.8, 1.25), rand(0.9, 1.15));
+    a.rotation.set(rand(0, 6), rand(0, 6), rand(0, 6));
+    a.position.y = 0.2;
+    g.add(a);
+    if (Math.random() < 0.5) {
+      const b = new THREE.Mesh(rockGeo, rockMat);
+      b.scale.setScalar(rand(0.35, 0.5));
+      b.position.set(rand(-0.6, 0.6), 0.05, rand(0.3, 0.7));
+      g.add(b);
+    }
+    const f = new THREE.Mesh(foamGeo, foamMat);
+    f.position.y = 0.12;
+    g.add(f);
+    return g;
+  }
+  function makeLog() {
+    const g = new THREE.Group();
+    const l = new THREE.Mesh(logGeo, logMat);
+    l.position.y = 0.14;
+    const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 0.5, 5), logMat);
+    stub.position.set(rand(-0.5, 0.5), 0.38, 0);
+    stub.rotation.z = rand(-0.6, 0.6);
+    g.add(l, stub);
+    g.rotation.y = rand(-0.15, 0.15);
+    return g;
+  }
+  function makeLantern() {
+    const g = new THREE.Group();
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.24;
+    const gl = glow(0xff9a3c, 2.4, 0.85);
+    gl.position.y = 0.3;
+    g.add(base, body, gl);
+    return g;
+  }
+
+  let objects = [];
+  function spawn(kind, x, z) {
+    const obj = kind === 'rock' ? makeRock() : kind === 'log' ? makeLog() : makeLantern();
+    obj.position.set(x, 0, z);
+    scene.add(obj);
+    objects.push({ kind, obj, phase: rand(0, 6.28) });
+  }
+  function removeAt(i) {
+    scene.remove(objects[i].obj);
+    objects.splice(i, 1);
+  }
+
+  // ---------- 游戏状态 ----------
+  const SPAWN_Z = -95;
+  let state = 'ready';
+  let t = 0, speed = 6, travel = 0, dist = 0, lanternCount = 0;
+  let lane = 1, boatX = 0, sinceRow = 0, lastFree = [0, 1, 2];
+  let shake = 0, wakeTimer = 0, overTimer = 0, flash = 0, sinkT = 0;
+  let best = 0;
+  try { best = Number(localStorage.getItem('paperboat-best')) || 0; } catch (e) {}
+
+  const score = () => Math.floor(dist) + lanternCount * 25;
+
+  function spawnRow() {
+    const twoChance = Math.min(0.45, Math.max(0, (dist - 150) / 800));
+    let free;
+    if (Math.random() < twoChance) {
+      // 两条道被堵时，留下的空道必须和上一排的某条空道相邻，保证来得及换过去
+      const cands = [0, 1, 2].filter((l) => lastFree.some((f) => Math.abs(f - l) <= 1));
+      free = [pick(cands)];
+    } else {
+      const blocked = Math.floor(Math.random() * 3);
+      free = [0, 1, 2].filter((l) => l !== blocked);
+    }
+    for (let l = 0; l < 3; l++) {
+      if (free.includes(l)) continue;
+      spawn(Math.random() < 0.75 ? 'rock' : 'log', LANES[l] + rand(-0.12, 0.12), SPAWN_Z);
+    }
+    if (Math.random() < 0.55) spawn('lantern', LANES[pick(free)], SPAWN_Z);
+
+    // 偶尔在两排之间放一串河灯
+    const both = free.filter((l) => lastFree.includes(l));
+    if (both.length && Math.random() < 0.3) {
+      const gap = rowGap();
+      const lx = LANES[pick(both)];
+      for (let k = 1; k <= 3; k++) spawn('lantern', lx, SPAWN_Z + gap * k / 4);
+    }
+    lastFree = free;
+  }
+  const rowGap = () => Math.max(8.5, 15 - dist / 120);
+
+  function start() {
+    for (let i = objects.length - 1; i >= 0; i--) removeAt(i);
+    state = 'playing';
+    dist = 0; lanternCount = 0; lane = 1; boatX = 0;
+    sinceRow = 4; lastFree = [0, 1, 2];
+    sinkT = 0; overTimer = 0;
+    boat.rotation.set(0, 0, 0);
+    $('overlay').hidden = true;
+    ensureAudio();
+  }
+
+  function crash() {
+    state = 'over';
+    overTimer = 0;
+    if (!reduceMotion) shake = 0.6;
+    thud();
+    const s = score();
+    const isRecord = s > best;
+    if (isRecord) {
+      best = s;
+      try { localStorage.setItem('paperboat-best', String(best)); } catch (e) {}
+    }
+    $('eyebrow').textContent = isRecord ? '新纪录' : '触礁';
+    $('title').textContent = '纸船翻了';
+    $('msg').textContent = isRecord ? '这一程漂得比以往都远。' : `离最佳还差 ${best - s} 分。`;
+    $('rScore').textContent = s;
+    $('rDist').textContent = Math.floor(dist) + 'm';
+    $('rLanterns').textContent = lanternCount;
+    $('results').hidden = false;
+    $('go').textContent = '再航一次';
+  }
+
+  function collect(o) {
+    lanternCount++;
+    flash = 1;
+    burst(new THREE.Vector3(o.obj.position.x, 0.5, o.obj.position.z));
+    chime();
+  }
+
+  // ---------- 声音（首次点击后才创建） ----------
+  let actx = null, muted = false;
+  function ensureAudio() {
+    if (!actx) {
+      try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { actx = null; }
+    }
+    if (actx && actx.state === 'suspended') actx.resume().catch(() => {});
+  }
+  function chime() {
+    if (!actx || muted) return;
+    const now = actx.currentTime;
+    [[987.8, 0], [1318.5, 0.07]].forEach(([f, d]) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, now + d);
+      g.gain.exponentialRampToValueAtTime(0.16, now + d + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + d + 0.4);
+      o.connect(g); g.connect(actx.destination);
+      o.start(now + d); o.stop(now + d + 0.45);
+    });
+  }
+  function thud() {
+    if (!actx || muted) return;
+    const now = actx.currentTime;
+    const len = Math.floor(actx.sampleRate * 0.5);
+    const buf = actx.createBuffer(1, len, actx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = actx.createBufferSource();
+    src.buffer = buf;
+    const lp = actx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 500;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(0.6, now);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+    src.connect(lp); lp.connect(g); g.connect(actx.destination);
+    src.start(now);
+  }
+
+  // ---------- 输入 ----------
+  function move(d) {
+    if (state !== 'playing') return;
+    lane = Math.max(0, Math.min(2, lane + d));
+  }
+  const canStart = () => state === 'ready' || (state === 'over' && !$('overlay').hidden);
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') { move(-1); e.preventDefault(); }
+    else if (e.code === 'ArrowRight' || e.code === 'KeyD') { move(1); e.preventDefault(); }
+    else if ((e.code === 'Enter' || e.code === 'Space') && canStart()) { start(); e.preventDefault(); }
+  });
+  canvas.addEventListener('pointerdown', (e) => {
+    if (state === 'playing') move(e.clientX < window.innerWidth / 2 ? -1 : 1);
+  });
+  $('go').addEventListener('click', () => { if (canStart()) start(); });
+  $('mute').addEventListener('click', () => {
+    muted = !muted;
+    $('mute').textContent = muted ? '声音 关' : '声音 开';
+    $('mute').blur();
+  });
+
+  // ---------- 尺寸 ----------
+  let camDist = 7.8;
+  function resize() {
+    const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
+    renderer.setSize(w, h, false);
+    const aspect = w / h;
+    camera.aspect = aspect;
+    camera.fov = aspect < 1 ? 68 : 55;
+    camera.updateProjectionMatrix();
+    // 竖屏时把相机拉远，保证三条航道都在画面里
+    const halfW = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * aspect;
+    camDist = Math.max(7.8, 3.4 / halfW);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- 主循环 ----------
+  const hud = { score: $('score'), dist: $('dist'), lanterns: $('lanterns'), best: $('best') };
+  const shown = {};
+  function setText(key, v) {
+    if (shown[key] !== v) { shown[key] = v; hud[key].textContent = v; }
+  }
+
+  function update(dt) {
+    t += dt;
+    if (state === 'playing') {
+      speed = Math.min(28, 12 + dist / 60);
+      dist += speed * dt;
+    } else if (state === 'ready') {
+      speed = 6;
+    } else {
+      speed = Math.max(0, speed - 30 * dt);
+      overTimer += dt;
+      if (overTimer > 1 && $('overlay').hidden) $('overlay').hidden = false;
+    }
+    travel += speed * dt;
+
+    updateWater(t, travel);
+    updateLand(travel);
+
+    for (const d of decor) {
+      d.obj.position.z += speed * dt;
+      if (d.obj.position.z > 14) placeDecor(d, rand(-135, -125), travel);
+    }
+
+    if (state === 'playing') {
+      sinceRow += speed * dt;
+      const gap = rowGap();
+      if (sinceRow >= gap) { sinceRow -= gap; spawnRow(); }
+    }
+
+    for (let i = objects.length - 1; i >= 0; i--) {
+      const o = objects[i], p = o.obj.position;
+      p.z += speed * dt;
+      if (o.kind === 'lantern') {
+        p.y = 0.1 + Math.sin(t * 2.4 + o.phase) * 0.06;
+        o.obj.rotation.y += dt * 0.6;
+        if (state === 'playing' && Math.abs(p.z) < 1.2 && Math.abs(p.x - boatX) < 1.05) {
+          collect(o); removeAt(i); continue;
+        }
+      } else {
+        p.y = Math.sin(t * 1.3 + o.phase) * 0.03;
+        const hw = o.kind === 'log' ? 1.3 : 0.98;
+        if (state === 'playing' && Math.abs(p.z) < 0.9 && Math.abs(p.x - boatX) < hw) crash();
+      }
+      if (p.z > 10) removeAt(i);
+    }
+
+    // 纸船
+    const target = LANES[lane];
+    const step = 16 * dt;
+    boatX += Math.max(-step, Math.min(step, target - boatX));
+    const lean = target - boatX;
+    boat.position.x = boatX + (state === 'ready' ? Math.sin(t * 0.8) * 0.25 : 0);
+    if (state === 'over') {
+      sinkT = Math.min(1, sinkT + dt * 1.2);
+      boat.rotation.z = sinkT * 1.1;
+      boat.position.y = -sinkT * 0.35;
+    } else {
+      boat.position.y = waveH(boatX, -travel, t) + Math.sin(t * 2.2) * 0.04;
+      boat.rotation.z = -lean * 0.22 + Math.sin(t * 1.7) * 0.04;
+      boat.rotation.y = lean * 0.12;
+      boat.rotation.x = Math.sin(t * 1.5) * 0.04;
+    }
+    flash = Math.max(0, flash - dt * 2.5);
+    boatLight.intensity = 1.1 + flash * 2;
+
+    // 波纹
+    wakeTimer += dt;
+    if (state !== 'over' && wakeTimer > 0.07) { wakeTimer = 0; emitWake(boat.position.x); }
+    for (const w of wake) {
+      if (w.life <= 0) continue;
+      w.life -= dt;
+      if (w.life <= 0) { w.m.visible = false; continue; }
+      const k = 1 - w.life / 1.2;
+      w.m.position.z += speed * dt;
+      w.m.scale.setScalar(1 + k * 2.5);
+      w.m.material.opacity = 0.22 * (1 - k);
+    }
+
+    // 火星
+    for (const k of sparks) {
+      if (k.life <= 0) continue;
+      k.life -= dt;
+      if (k.life <= 0) { k.s.visible = false; continue; }
+      k.v.y -= 3 * dt;
+      k.s.position.addScaledVector(k.v, dt);
+      k.s.position.z += speed * dt;
+      k.s.material.opacity = k.life / 0.8;
+    }
+
+    for (const s of skyLanterns) {
+      s.position.y += s.userData.v * dt;
+      s.position.x += Math.sin(t * 0.3 + s.userData.v * 10) * dt * 0.3;
+      if (s.position.y > 60) s.position.y = 2;
+    }
+
+    // 相机
+    shake = Math.max(0, shake - dt);
+    const sx = shake ? rand(-1, 1) * shake * 0.4 : 0, sy = shake ? rand(-1, 1) * shake * 0.3 : 0;
+    camera.position.set(boatX * 0.4 + sx, camDist * 0.62 + sy, camDist);
+    camera.lookAt(boatX * 0.25, 0, -7);
+
+    setText('score', score());
+    setText('dist', Math.floor(dist));
+    setText('lanterns', lanternCount);
+    setText('best', best);
+  }
+
+  let last = performance.now();
+  function loop(now) {
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (document.hidden) return;
+    update(dt);
+    renderer.render(scene, camera);
+  }
+
+  function boot(data) {
+    if (data && data.best > best) best = data.best;
+    requestAnimationFrame((n) => { last = n; loop(n); });
+  }
+  try { window.claude?.hot?.snapshot?.(() => ({ best })); } catch (e) {}
+  if (window.claude?.hot?.ready) window.claude.hot.ready(boot);
+  else boot(window.claude?.hot?.data ?? {});
+})();
+</script>
