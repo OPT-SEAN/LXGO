@@ -178,6 +178,65 @@ def build_armature(L):
 # ---------------------------------------------------------------------------
 # 4. 蒙皮：距离权重 + 部位限制
 # ---------------------------------------------------------------------------
+def clean_mesh(obj, co):
+    """去掉 AI 模型的毛边拉丝：
+    1. 删掉和主体不相连、面数很少的碎片（马尾尖上断开的细丝、飘着的小三角面）
+    2. 对头发区域做几轮平滑，把针状的尖刺抹圆
+    返回清理后的顶点坐标。"""
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    # glTF 导入时顶点会沿贴图接缝拆开，先焊回去（UV 存在面角上，焊接不影响贴图），
+    # 否则每块贴图岛都会被当成「不相连的碎片」
+    n0 = len(bm.verts)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    print(f"焊接接缝：{n0} -> {len(bm.verts)} 个顶点")
+    bm.verts.ensure_lookup_table()
+    bm.verts.index_update()
+    # 按连通性分块
+    seen, parts = set(), []
+    for v in bm.verts:
+        if v.index in seen:
+            continue
+        stack, part = [v], []
+        seen.add(v.index)
+        while stack:
+            cur = stack.pop()
+            part.append(cur)
+            for e in cur.link_edges:
+                o = e.other_vert(cur)
+                if o.index not in seen:
+                    seen.add(o.index)
+                    stack.append(o)
+        parts.append(part)
+    parts.sort(key=len, reverse=True)
+    biggest = len(parts[0])
+    junk = [v for part in parts[1:] if len(part) < max(60, biggest * 0.004) for v in part]
+    bmesh.ops.delete(bm, geom=junk, context="VERTS")
+    print(f"连通块 {len(parts)} 个，删掉碎片 {len(parts) - sum(1 for p in parts if len(p) >= max(60, biggest * 0.004))} 个（{len(junk)} 个顶点）")
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    return np.array([v.co[:] for v in obj.data.vertices])
+
+
+def smooth_hair(obj, co, L, rounds=6, factor=0.5):
+    """只平滑头发区域（颜色很深、在肩膀以上）的顶点，把尖刺抹圆，不动脸和衣服。"""
+    import bmesh
+    mask = hair_mask(obj, co, L)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bm.verts.ensure_lookup_table()
+    verts = [bm.verts[i] for i in np.nonzero(mask)[0]]
+    for _ in range(rounds):
+        bmesh.ops.smooth_vert(bm, verts=verts, factor=factor, use_axis_x=True, use_axis_y=True, use_axis_z=True)
+    bm.to_mesh(obj.data)
+    bm.free()
+    obj.data.update()
+    print("平滑头发顶点:", len(verts))
+    return np.array([v.co[:] for v in obj.data.vertices])
+
+
 def hair_mask(obj, co, L):
     """按贴图颜色找头发：肩膀以上、颜色很深的顶点（黑发）。"""
     me = obj.data
@@ -499,7 +558,9 @@ def preview(rig, obj, out_dir):
 
 def main():
     obj, co = load_mesh(SRC)
+    co = clean_mesh(obj, co)
     L = landmarks(co)
+    co = smooth_hair(obj, co, L)
     rig = build_armature(L)
     if "--simple-skin" in sys.argv:
         skin(obj, rig, L, co)
