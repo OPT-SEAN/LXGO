@@ -2,3 +2,5 @@ __pycache__/
 *.blend1
 ac-garden/refs/*.png
 ac-garden/refs/*.jpg
+ac-garden/tripo/views/
+ac-garden/tripo/out/
