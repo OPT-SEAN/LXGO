@@ -262,7 +262,10 @@ def hair_mask(obj, co, L):
     iy = np.clip((uv[:, 1] % 1) * (h - 1), 0, h - 1).astype(int)
     rgb = px[iy, ix, :3]
     lum = rgb @ np.array([0.2126, 0.7152, 0.0722])
-    return (lum < 0.2) & (co[:, 2] > L["neck"] - 0.12)
+    dark = (lum < 0.2) & (co[:, 2] > L["neck"] - 0.12)
+    # 排除躯干正面、脖子以下（毛衣上的深棕色熊图案就在那里，不能当成头发）
+    chest = (co[:, 1] < 0.02) & (np.abs(co[:, 0]) < L["torso_half"]) & (co[:, 2] < L["neck"] + 0.01)
+    return dark & ~chest
 
 
 def skin_heat(obj, rig, L, co):
@@ -557,6 +560,7 @@ def preview(rig, obj, out_dir):
 
 
 def main():
+    os.makedirs(os.path.dirname(os.path.abspath(DST)), exist_ok=True)
     obj, co = load_mesh(SRC)
     co = clean_mesh(obj, co)
     L = landmarks(co)

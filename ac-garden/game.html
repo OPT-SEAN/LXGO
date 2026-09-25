@@ -86,6 +86,16 @@
     appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 12px 20px;
     font: 700 16px/1 "Noto Sans SC", sans-serif; background: #ffe07a; color: var(--ink);
   }
+  .mode {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 3;
+    top: calc(env(safe-area-inset-top, 0px) + 16px);
+    appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 9px 18px;
+    font: 700 14px/1 "Noto Sans SC", sans-serif; letter-spacing: 0.06em; color: var(--ink);
+    background: var(--cream); box-shadow: 0 4px 0 rgba(0, 0, 0, 0.1);
+  }
+  .mode:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  body.demo .actions, body.demo .help { display: none; }
+  body.demo .toast { top: auto; bottom: calc(env(safe-area-inset-bottom, 0px) + 28px); }  /* 演示近景时别挡脸 */
   #status {
     position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5;
     background: var(--cream); border-radius: 14px; padding: 12px 18px; font-size: 14px; color: var(--ink-soft);
@@ -104,6 +114,7 @@
     <div>偷吃了 <b id="eaten">0</b></div>
   </div>
 </div>
+<button id="mode" class="mode" type="button">自己玩</button>
 <div id="help" class="help">
   <b>WASD / 方向键</b> 走路 · 按住 <b>Shift</b> 小跑 · <b>E</b> 采摘 · <b>Q</b> 偷吃<br>
   手机：点地面走过去，点草莓自动去摘
@@ -311,25 +322,50 @@ function fit(obj, { height, width, axis } = {}) {
   return wrap;
 }
 
-function chalkText(lines, w = 512, h = 384) {
+// 在画布上写字做成贴图。carved=true 时模拟刻在木头上：字里偏暗、下沿一道亮边
+function chalkText(lines, w = 512, h = 384, carved = false) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d');
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   tex.draw = (ls) => {
     g.clearRect(0, 0, w, h);
     g.textAlign = 'center';
     g.textBaseline = 'middle';
     ls.forEach(([text, size, color, y]) => {
       g.font = `${size}px "ZCOOL KuaiLe", "Noto Sans SC", sans-serif`;
-      g.fillStyle = color;
-      g.fillText(text, w / 2, y);
+      if (carved) {
+        g.fillStyle = 'rgba(255, 236, 200, 0.55)';
+        g.fillText(text, w / 2 + 2, y + 4);   // 刻痕下沿的受光亮边
+        g.fillStyle = color;
+        g.fillText(text, w / 2, y);
+        g.fillStyle = 'rgba(40, 20, 8, 0.35)';
+        g.fillText(text, w / 2 - 1, y - 2);   // 刻痕上沿的阴影
+      } else {
+        g.fillStyle = color;
+        g.globalAlpha = 0.92;
+        g.fillText(text, w / 2, y);
+        g.globalAlpha = 1;
+      }
     });
     tex.needsUpdate = true;
   };
+  // 等网页字体加载好再画，否则会先用默认黑体
   tex.draw(lines);
+  document.fonts && document.fonts.load('80px "ZCOOL KuaiLe"').then(() => tex.draw(tex.lastLines || lines));
+  const draw = tex.draw;
+  tex.draw = (ls) => { tex.lastLines = ls; draw(ls); };
   return tex;
+}
+
+// 受光照的文字贴片：和木板/黑板一起明暗；alphaTest 裁掉透明边，不会出现一圈矩形
+function textPlate(tex, w, h) {
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({
+    map: tex, transparent: true, alphaTest: 0.08, roughness: 0.9, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -2,
+  }));
 }
 
 let boardTex = null;
@@ -355,8 +391,8 @@ function buildGarden(M) {
   // 木牌「草莓园」
   const sign = add(fit(prep(M.sign.clone(true)), { height: 0.95 }), -0.75, -1.35, 0);
   {
-    const tex = chalkText([['草莓园', 150, '#5a3a22', 190]], 512, 384);
-    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.3), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    const tex = chalkText([['草莓园', 150, '#4a2b16', 190]], 512, 384, true);
+    const plate = textPlate(tex, 0.62, 0.3);
     const bb = new THREE.Box3().setFromObject(sign);
     plate.position.set(-0.75, bb.min.y + (bb.max.y - bb.min.y) * 0.72, bb.max.z + 0.005);
     scene.add(plate);
@@ -367,7 +403,10 @@ function buildGarden(M) {
     // 在摆放之前（原点、未旋转）量板面位置：板面大约在整体高度 55% 处、前后居中偏前
     const bb = new THREE.Box3().setFromObject(board);
     boardTex = chalkText([['今日采摘', 86, '#f6f2e6', 120], ['0 / 20', 110, '#f47c7c', 250]]);
-    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.26), new THREE.MeshBasicMaterial({ map: boardTex, transparent: true }));
+    const plate = textPlate(boardTex, 0.34, 0.26);
+    plate.material.emissive = new THREE.Color('#ffffff');
+    plate.material.emissiveMap = boardTex;
+    plate.material.emissiveIntensity = 0.35;   // 粉笔字稍微亮一点，在暗绿黑板上看得清
     plate.position.set((bb.min.x + bb.max.x) / 2, bb.min.y + (bb.max.y - bb.min.y) * 0.56, bb.max.z * 0.55 + 0.01);
     plate.rotation.x = -0.12;
     board.add(plate);
@@ -475,6 +514,8 @@ function playOnce(name, onDone) {
 const keys = new Set();
 addEventListener('keydown', (e) => {
   keys.add(e.code);
+  if (demo.on && /^(Key[WASD]|Arrow)/.test(e.code)) setDemo(false);
+  if (demo.on) return;
   if (e.code === 'KeyE' || e.code === 'Space') { tryPick(); e.preventDefault(); }
   if (e.code === 'KeyQ') tryEat();
   if (e.code.startsWith('Arrow')) e.preventDefault();
@@ -487,7 +528,7 @@ $('btnEat').addEventListener('click', () => tryEat());
 const ray = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 canvas.addEventListener('pointerdown', (e) => {
-  if (!girl || busy()) return;
+  if (!girl || busy() || demo.on) return;
   const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   ray.setFromCamera(ndc, camera);
   const hits = ray.intersectObjects(berries.filter((b) => b.alive).map((b) => b.mesh), true);
@@ -522,11 +563,11 @@ function tryPick() {
   b.flyAt = performance.now() + dur * 450;
   b.flyDur = 350;
 }
-function tryEat() {
+function tryEat(scripted = false) {
   if (!girl || busy()) return;
   if (stats.basket <= 0) { toast('篮子是空的', '先去摘几颗'); return; }
   state.mode = 'eat'; state.target = null;
-  const dur = playOnce('Eat', () => { if (Math.random() < 0.35) caught(); });
+  const dur = playOnce('Eat', () => { if (!scripted && Math.random() < 0.35) caught(); });
   setTimeout(() => { stats.basket--; stats.eaten++; updateHud(); toast('好甜！', '偷偷吃掉了一颗'); }, dur * 400);
 }
 function caught() {
@@ -573,11 +614,11 @@ function blocked(x, z) {
   if (BEDS.some((b) => Math.abs(x - b.x) < b.hw + RADIUS && Math.abs(z - b.z) < b.hd + RADIUS)) return true;
   return OBST.some((o) => Math.hypot(x - o.x, z - o.z) < o.r + RADIUS);
 }
-function move(dx, dz, dt, running) {
+function move(dx, dz, dt, running, maxStep = Infinity) {
   const len = Math.hypot(dx, dz);
   if (len < 1e-3) return false;
-  const speed = running ? 1.7 : 0.85;
-  const sx = dx / len * speed * dt, sz = dz / len * speed * dt;
+  const step = Math.min((running ? 1.7 : 0.85) * dt, maxStep);  // 最后一步不越过目标点（掉帧时也不会来回跨）
+  const sx = dx / len * step, sz = dz / len * step;
   const p = girl.position;
   if (!blocked(p.x + sx, p.z)) p.x += sx;
   if (!blocked(p.x, p.z + sz)) p.z += sz;
@@ -662,13 +703,96 @@ Promise.all(names.map((n) => loadGLB(ASSETS[n]).then((g) => {
   setTimeout(() => { $('help').hidden = true; }, 9000);
 }).catch((err) => { $('status').textContent = '加载失败：' + (err && err.message ? err.message : err); });
 
-const camOffset = new THREE.Vector3(0, 2.2, 3.5);
+
+// ---------- 演示模式：剧本 + 镜头 ----------
+// 每一步：shot 镜头；idle 等几秒；walk/run 走到某点；pick 摘最近的草莓；eat 偷吃；caught 被发现
+const DEMO = [
+  { shot: 'orbit', idle: 5 },
+  { shot: 'follow', walk: [-0.3, 1.0] },
+  { shot: 'follow', walk: [-1.05, 0.8] },
+  { shot: 'close', pick: true },
+  { shot: 'close', walk: [-0.55, 0.8] },
+  { shot: 'close', pick: true },
+  { shot: 'side', walk: [0, 0.2] },
+  { shot: 'side', walk: [0.8, -0.4] },
+  { shot: 'close', pick: true },
+  { shot: 'wide', walk: [0.3, 0.6] },
+  { shot: 'close', idle: 2.6 },
+  { shot: 'close', eat: true },
+  { shot: 'close', caught: true },
+  { shot: 'wide', run: [0, 1.7] },
+  { shot: 'orbit', idle: 4, reset: true },
+];
+const demo = { on: true, i: 0, t: 0, started: false };
+
+function setDemo(on) {
+  demo.on = on;
+  document.body.classList.toggle('demo', on);
+  $('mode').textContent = on ? '自己玩' : '看演示';
+  state.target = null; state.autoPick = null; state.forceRun = false;
+  if (on) { demo.i = 0; demo.started = false; resetRound(); }
+}
+$('mode').addEventListener('click', () => setDemo(!demo.on));
+document.body.classList.add('demo');
+
+function resetRound() {
+  Object.assign(stats, { picked: 0, basket: 0, eaten: 0 });
+  if (girl) { spawnBerries(); updateHud(); }
+}
+
+function demoTick(dt) {
+  const step = DEMO[demo.i];
+  if (!demo.started) {
+    demo.started = true; demo.t = 0;
+    const p = step.walk || step.run;
+    if (p) { state.target = new THREE.Vector3(p[0], 0, p[1]); state.autoPick = null; state.forceRun = !!step.run; }
+    if (step.pick) tryPick();
+    if (step.eat) tryEat(true);
+    if (step.caught) caught();
+    if (step.reset) setTimeout(resetRound, 3000);
+  }
+  demo.t += dt;
+  const done = step.idle ? demo.t > step.idle : (demo.t > 0.3 && !busy() && !state.target);
+  if (done) { state.forceRun = false; demo.i = (demo.i + 1) % DEMO.length; demo.started = false; }
+}
+
+// 各种镜头：返回 [相机位置, 看向的点, 跟随速度]
+const cam = { shot: null, since: 0, orbit0: 0 };
+function shotFor(shot, now) {
+  if (shot !== cam.shot) {
+    cam.shot = shot; cam.since = now;
+    cam.orbit0 = Math.atan2(camPos.x, camPos.z + 0.3);
+  }
+  const g = girl.position;
+  const at = (x, y, z) => new THREE.Vector3(x, y, z);
+  switch (shot) {
+    case 'orbit': {   // 绕整个草莓园慢慢转：从切进来时相机所在的角度开始，不会横穿场景
+      const a = cam.orbit0 + (now - cam.since) / 1000 * 0.12;
+      return [at(Math.sin(a) * 5.6, 3.3, Math.cos(a) * 5.6 - 0.3), at(0, 0.3, -0.3), 1.2];
+    }
+    case 'wide':      // 远景
+      return [at(g.x * 0.4, 4.0, g.z + 6.2), at(g.x * 0.6, 0.35, g.z - 0.6), 1.5];
+    case 'side':      // 侧面跟拍
+      return [g.clone().add(at(3.0, 1.7, 1.6)), g.clone().add(at(0, 0.5, 0)), 2];
+    case 'close': {   // 正面近景：相机在她面朝的方向
+      const h = state.heading;
+      const off = at(0.55, 0, 2.0).applyAxisAngle(at(0, 1, 0), h);
+      off.y = 1.05;
+      return [g.clone().add(off), g.clone().add(at(0, 0.55, 0)), 2];
+    }
+    case 'follow':
+      return [g.clone().add(at(0, 2.5, 4.0)), g.clone().add(at(0, 0.45, 0)), 2.5];
+    default:          // 自己玩
+      return [g.clone().add(camOffset), g.clone().add(at(0, 0.45, 0)), 3];
+  }
+}
+const camOffset = new THREE.Vector3(0, 2.9, 4.7);   // 操控时的跟随镜头（比之前远一些）
 const camPos = new THREE.Vector3(0, 2.4, 4.9);
 const look = new THREE.Vector3(0, 0.4, 1.2);
 let last = performance.now();
 function tick(now) {
   requestAnimationFrame(tick);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const dt = Math.min(0.05, (now - last) / 1000) * (window.__speed || 1);  // __speed 仅测试时加速用
   last = now;
   wind.value = now / 1000;
   clouds.children.forEach((c, i) => { c.position.x += dt * (0.12 + i * 0.01); if (c.position.x > 26) c.position.x = -26; });
@@ -690,8 +814,8 @@ function tick(now) {
         const reach = state.autoPick ? 0.5 : 0.06;
         if (dist > reach) {
           const before = girl.position.clone();
-          running = dist > 1.2;
-          moving = move(tx, tz, dt, running);
+          running = dist > 1.2 || state.forceRun;
+          moving = move(tx, tz, dt, running, dist - reach * 0.5);
           if (girl.position.distanceTo(before) < 1e-4) { state.target = null; moving = false; }
         } else {
           state.target = null;
@@ -703,9 +827,11 @@ function tick(now) {
     girl.rotation.y = angleLerp(girl.rotation.y, state.heading, Math.min(1, dt * 12));
     mixer.update(dt);
 
-    camPos.lerp(girl.position.clone().add(camOffset), Math.min(1, dt * 3));
+    if (demo.on) demoTick(dt);
+    const [wantPos, wantLook, speed] = shotFor(demo.on ? DEMO[demo.i].shot : 'play', now);
+    camPos.lerp(wantPos, Math.min(1, dt * speed));
     camera.position.copy(camPos);
-    look.lerp(girl.position.clone().add(new THREE.Vector3(0, 0.45, 0)), Math.min(1, dt * 4));
+    look.lerp(wantLook, Math.min(1, dt * speed * 1.3));
     camera.lookAt(look);
     sun.position.copy(girl.position).add(new THREE.Vector3(3, 6, 4));
     sun.target.position.copy(girl.position);
@@ -725,7 +851,7 @@ function tick(now) {
       }
     }
     if (!$('bubble').hidden) {
-      const head = girl.position.clone().add(new THREE.Vector3(0, 1.1, 0)).project(camera);
+      const head = girl.position.clone().add(new THREE.Vector3(0, 1.02, 0)).project(camera);
       $('bubble').style.left = `${(head.x + 1) / 2 * innerWidth}px`;
       $('bubble').style.top = `${(1 - head.y) / 2 * innerHeight}px`;
     }
@@ -733,4 +859,5 @@ function tick(now) {
   composer.render();
 }
 requestAnimationFrame(tick);
+window.__game = { camera, demo, state, get girl() { return girl; }, camPos, look };  // 调试用
 </script>
