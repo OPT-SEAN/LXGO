@@ -112,14 +112,22 @@
   controls.autoRotateSpeed = 1.2;
   controls.update();
 
-  new THREE.GLTFLoader().load('strawberry_girl.glb', (gltf) => {
+  // 页面的安全策略不允许 fetch() 读 blob: 地址，而 r128 的 GLTFLoader 在 Chrome 里
+  // 会用 fetch + createImageBitmap 读内嵌贴图。临时隐藏 createImageBitmap，
+  // 让它退回用 <img> 标签读贴图（blob: 图片是允许的）。
+  const cib = window.createImageBitmap;
+  window.createImageBitmap = undefined;
+  const loader = new THREE.GLTFLoader();
+  loader.load('strawberry_girl.glb', (gltf) => {
+    window.createImageBitmap = cib;
     gltf.scene.traverse((o) => {
       if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
     });
     scene.add(gltf.scene);
     status.hidden = true;
-  }, undefined, () => {
-    status.textContent = '模型没有加载成功，请刷新页面重试。';
+  }, undefined, (err) => {
+    window.createImageBitmap = cib;
+    status.textContent = '模型没有加载成功：' + (err && err.message ? err.message : err);
   });
 
   const spin = document.getElementById('spin');
