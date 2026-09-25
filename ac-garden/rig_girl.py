@@ -241,15 +241,27 @@ def make_action(rig, name, frames, keys):
         for pb in rig.pose.bones:
             pb.rotation_quaternion = Quaternion()
             pb.location = Vector()
+        aims = []
         for bname, spec in pose.items():
             pb = rig.pose.bones[bname]
             if spec and spec[0] == "loc":
                 pb.location = pb.bone.matrix_local.to_3x3().inverted() @ Vector(spec[1])
                 continue
+            if spec and spec[0] == "aim":
+                aims.append((pb, Vector(spec[1]).normalized()))
+                continue
             q = Quaternion()
             for axis, deg in spec:
                 q = world_rot(pb, axis, deg) @ q
             pb.rotation_quaternion = q
+        # 「指向」类：按父子顺序，让骨头在骨架空间里指向给定方向（父骨头先摆好，子骨头再算）
+        aims.sort(key=lambda a: len(a[0].parent_recursive))
+        for pb, target in aims:
+            bpy.context.view_layer.update()
+            cur = pb.matrix.to_quaternion()
+            dir_now = (pb.matrix.to_3x3() @ Vector((0, 1, 0))).normalized()
+            qw = dir_now.rotation_difference(target)
+            pb.rotation_quaternion = pb.rotation_quaternion @ (cur.inverted() @ qw @ cur)
         for pb in rig.pose.bones:
             pb.keyframe_insert("rotation_quaternion", frame=f)
             pb.keyframe_insert("location", frame=f)
@@ -291,16 +303,20 @@ def animations(rig):
                 "UpperLeg.L": [(X, -75 * t)], "UpperLeg.R": [(X, -75 * t)],
                 "LowerLeg.L": [(X, 120 * t)], "LowerLeg.R": [(X, 120 * t)],
                 "Foot.L": [(X, -45 * t)], "Foot.R": [(X, -45 * t)],
-                "Spine": [(X, -20 * t)], "Head": [(X, 10 * t)],
-                "UpperArm.R": [(X, -55 * t - 25 * reach)], "LowerArm.R": [(X, -20 * t)],
+                "Spine": [(X, 20 * t)], "Head": [(X, 10 * t)],   # 正角度 = 往前倾
                 "UpperArm.L": [(X, -25 * t)]}
+        if t:  # 右手往前下方伸向草莓，伸到最远时再低一点
+            k[f]["UpperArm.R"] = ("aim", (0.1, -0.55 - 0.1 * reach, -0.8))
+            k[f]["LowerArm.R"] = ("aim", (0.05, -0.45 - 0.15 * reach, -0.88))
     acts.append(make_action(rig, "Pick", 60, k))
 
     # 偷吃：右手把草莓送到嘴边，头往前点两下（2 秒）
     k = {}
     for f, t, nod in ((0, 0, 0), (15, 1, 0), (25, 1, 1), (35, 1, 0), (45, 1, 1), (60, 0, 0)):
-        k[f] = {"UpperArm.R": [(X, -70 * t), (Y, 20 * t)], "LowerArm.R": [(X, -110 * t)],
-                "Hand.R": [(X, -20 * t)], "Head": [(X, 8 * nod)], "Spine": [(X, -3 * t)]}
+        k[f] = {"Head": [(X, 8 * nod)], "Spine": [(X, 3 * t)]}
+        if t:
+            k[f]["UpperArm.R"] = ("aim", (0.25, -0.75, -0.6))
+            k[f]["LowerArm.R"] = ("aim", (0.28, -0.55, 0.79))
     acts.append(make_action(rig, "Eat", 60, k))
     rig.animation_data.action = acts[0]
     return acts
@@ -325,8 +341,11 @@ def preview(rig, obj, out_dir):
     scene.camera = cam
     for act in bpy.data.actions:
         rig.animation_data.action = act
-        for f in (0, int(act.frame_range[1] // 2)):
+        for f in (0, int(act.frame_range[1] // (4 if act.name == "Walk" else 2))):
             scene.frame_set(f)
+            for bn in ("UpperArm.R", "LowerArm.R", "UpperLeg.R"):
+                pb = rig.pose.bones[bn]
+                print(f"  {act.name}@{f} {bn}: 头 {tuple(round(c, 2) for c in pb.head)} -> 尾 {tuple(round(c, 2) for c in pb.tail)}")
             scene.render.filepath = os.path.join(out_dir, f"{act.name}_{f:02d}.png")
             bpy.ops.render.render(write_still=True)
 
