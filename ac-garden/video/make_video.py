@@ -26,7 +26,7 @@ STYLE = ("Animal Crossing New Horizons style 3D animation, Nintendo, cute rounde
          "and a high messy ponytail, blue and pink headphones, mustard yellow knit sweater with a brown bear "
          "silhouette on the front, yellow pants, brown fluffy leg warmers, light blue sneakers.")
 
-# 分镜：编号、时长（秒）、画面描述
+# 分镜：编号、时长（秒）、画面描述（「05_caught 被发现」按用户要求去掉，编号保留不重排）
 SHOTS = [
     ("01_open", 6, "Wide establishing shot of a cozy strawberry garden on a sunny island: wooden raised planter boxes "
                    "full of strawberry plants with red berries, a white picket fence, round fluffy trees, flowers, "
@@ -36,8 +36,6 @@ SHOTS = [
     ("03_look", 5, "Close-up: the girl holds a strawberry, looks left and right to check nobody is watching, "
                    "with a sneaky little grin."),
     ("04_eat", 5, "Close-up: the girl quickly takes a big bite of the strawberry, cheeks puffed, eyes closed in delight."),
-    ("05_caught", 5, "The girl freezes, a red exclamation mark pops above her head, she jumps in surprise with both "
-                     "arms up, then hides the strawberry behind her back and smiles innocently."),
     ("06_end", 6, "Wide shot at golden hour: the girl walks away along the path carrying the basket of strawberries, "
                   "the camera slowly rises above the strawberry garden."),
 ]
