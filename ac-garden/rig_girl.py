@@ -178,6 +178,111 @@ def build_armature(L):
 # ---------------------------------------------------------------------------
 # 4. 蒙皮：距离权重 + 部位限制
 # ---------------------------------------------------------------------------
+def hair_mask(obj, co, L):
+    """按贴图颜色找头发：肩膀以上、颜色很深的顶点（黑发）。"""
+    me = obj.data
+    img = None
+    for m in me.materials:
+        if m and m.use_nodes:
+            for n in m.node_tree.nodes:
+                if n.type == "TEX_IMAGE" and n.image:
+                    img = n.image
+    if img is None or not me.uv_layers:
+        return np.zeros(len(co), dtype=bool)
+    w, h = img.size
+    px = np.empty(w * h * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(h, w, 4)
+    uv = np.zeros((len(me.vertices), 2))
+    loops_uv = np.empty(len(me.loops) * 2, dtype=np.float32)
+    me.uv_layers.active.data.foreach_get("uv", loops_uv)
+    loop_v = np.empty(len(me.loops), dtype=np.int32)
+    me.loops.foreach_get("vertex_index", loop_v)
+    uv[loop_v] = loops_uv.reshape(-1, 2)
+    ix = np.clip((uv[:, 0] % 1) * (w - 1), 0, w - 1).astype(int)
+    iy = np.clip((uv[:, 1] % 1) * (h - 1), 0, h - 1).astype(int)
+    rgb = px[iy, ix, :3]
+    lum = rgb @ np.array([0.2126, 0.7152, 0.0722])
+    return (lum < 0.2) & (co[:, 2] > L["neck"] - 0.12)
+
+
+def skin_heat(obj, rig, L, co):
+    """正规一点的蒙皮：
+    1. 复制一份模型，用体素重建成封闭网格（AI 模型常有破洞，热扩散权重在破洞上会失败）
+    2. 在这份替身上算 Blender 的「自动权重」（热扩散，关节处平滑过渡）
+    3. 按最近表面把权重传回原模型
+    4. 头发整块跟头走（否则垂下的发丝会被肩膀、手臂拉长）"""
+    view = bpy.context.view_layer
+    proxy = obj.copy()
+    proxy.data = obj.data.copy()
+    bpy.context.scene.collection.objects.link(proxy)
+    rem = proxy.modifiers.new("Remesh", "REMESH")
+    rem.mode = "VOXEL"
+    rem.voxel_size = 0.008
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    view.objects.active = proxy
+    proxy.select_set(True)
+    bpy.ops.object.modifier_apply(modifier="Remesh")
+    # 热扩散求解器在很小的尺寸上容易失败：临时把替身和一份骨架放大 20 倍来算
+    S = 20.0
+    pco = np.empty(len(proxy.data.vertices) * 3, dtype=np.float32)
+    proxy.data.vertices.foreach_get("co", pco)
+    proxy.data.vertices.foreach_set("co", pco * S)
+    tmp = rig.copy()
+    tmp.data = rig.data.copy()
+    bpy.context.scene.collection.objects.link(tmp)
+    tmp.scale = (S, S, S)
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    tmp.select_set(True)
+    view.objects.active = tmp
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    proxy.select_set(True)
+    view.objects.active = tmp
+    bpy.ops.object.parent_set(type="ARMATURE_AUTO")
+    for m in list(proxy.modifiers):
+        proxy.modifiers.remove(m)
+    proxy.parent = None
+    proxy.data.vertices.foreach_set("co", pco)
+    bpy.data.objects.remove(tmp, do_unlink=True)
+    used = set()
+    for v in proxy.data.vertices:
+        for e in v.groups:
+            if e.weight > 0.01:
+                used.add(e.group)
+    empty = [g.name for g in proxy.vertex_groups if g.index not in used]
+    print("替身顶点:", len(proxy.data.vertices), "权重为空的骨头:", empty)
+
+    for b in rig.data.bones:
+        obj.vertex_groups.new(name=b.name)
+    dt = obj.modifiers.new("Transfer", "DATA_TRANSFER")
+    dt.object = proxy
+    dt.use_vert_data = True
+    dt.data_types_verts = {"VGROUP_WEIGHTS"}
+    dt.vert_mapping = "POLYINTERP_NEAREST"
+    dt.layers_vgroup_select_src = "ALL"
+    dt.layers_vgroup_select_dst = "NAME"
+    for o in bpy.context.selected_objects:
+        o.select_set(False)
+    view.objects.active = obj
+    obj.select_set(True)
+    bpy.ops.object.modifier_apply(modifier="Transfer")
+    bpy.data.objects.remove(proxy, do_unlink=True)
+
+    hair = np.nonzero(hair_mask(obj, co, L))[0].tolist()
+    print("识别为头发的顶点:", len(hair))
+    if hair:
+        for g in obj.vertex_groups:
+            g.remove(hair)
+        obj.vertex_groups["Head"].add(hair, 1.0, "REPLACE")
+    bpy.ops.object.vertex_group_limit_total(group_select_mode="ALL", limit=4)
+    bpy.ops.object.vertex_group_normalize_all(group_select_mode="ALL", lock_active=False)
+    obj.parent = rig
+    mod = obj.modifiers.new("Rig", "ARMATURE")
+    mod.object = rig
+
+
 def seg_dist(p, a, b):
     ab = b - a
     t = np.clip(((p - a) @ ab) / max(ab @ ab, 1e-9), 0, 1)
@@ -396,7 +501,10 @@ def main():
     obj, co = load_mesh(SRC)
     L = landmarks(co)
     rig = build_armature(L)
-    skin(obj, rig, L, co)
+    if "--simple-skin" in sys.argv:
+        skin(obj, rig, L, co)
+    else:
+        skin_heat(obj, rig, L, co)
     animations(rig)
     bpy.context.scene.render.fps = FPS
     if PREVIEW:

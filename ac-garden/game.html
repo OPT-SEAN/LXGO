@@ -430,7 +430,21 @@
     }),
     loader.loadAsync(ASSETS.girl).then((g) => {
       girl = g.scene;
-      girl.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+      girl.traverse((o) => {
+        if (!o.isMesh) return;
+        o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false;
+        // 混元 3D 的贴图里已经画好了明暗，再被场景灯光打一遍会发暗发灰：
+        // 让贴图自己发一部分光、减弱高光，亮度和色调就和场景对上了
+        const m = o.material;
+        if (m && m.map) {
+          m.emissive = new THREE.Color(0xffffff);
+          m.emissiveMap = m.map;
+          m.emissiveIntensity = 0.32;
+          m.roughness = 0.85;
+          m.metalness = 0;
+          m.needsUpdate = true;
+        }
+      });
       girl.position.set(0, 0, 0.9);
       scene.add(girl);
       mixer = new THREE.AnimationMixer(girl);
