@@ -353,6 +353,61 @@ class Part:
         return self.finish(body, None, name, smooth=False)
 
 
+class MeshProbe:
+    """对一个已经摆好的网格做射线检测，求表面上的点和法线。
+    用在变形过的头上：五官沿着 +Y 方向从正面「投」到脸上，贴得严丝合缝。"""
+
+    def __init__(self, obj):
+        from mathutils.bvhtree import BVHTree
+        mw = obj.matrix_world
+        verts = [mw @ v.co for v in obj.data.vertices]
+        polys = [tuple(p.vertices) for p in obj.data.polygons]
+        self.tree = BVHTree.FromPolygons(verts, polys)
+        self.center = mw.translation.copy()
+
+    def front(self, x, z, lift=0.0):
+        hit, n, _, _ = self.tree.ray_cast(Vector((x, -5, z)), Vector((0, 1, 0)))
+        if hit is None:
+            raise ValueError(f"({x}, {z}) 没有打到表面")
+        return hit + n * lift, n
+
+    def toward(self, direction, lift=0.0):
+        """从外面沿 -direction 方向射向中心（用来放头顶、脑后、侧面的东西）。"""
+        d = Vector(direction).normalized()
+        hit, n, _, _ = self.tree.ray_cast(self.center + d * 5, -d)
+        return hit + n * lift, n
+
+
+def rounded_column(part, name, material, z0, z1, r_bottom, r_top, depth=0.85, power=4.0,
+                   center=(0, 0), seg=40, rings=24):
+    """圆角锥形筒（身体、裤子）：上下两端是圆润的倒角，比椭球更「方」、更像衣服。"""
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=seg, ring_count=rings, radius=1)
+    o = active()
+    half = (z1 - z0) / 2
+    for v in o.data.vertices:
+        t = v.co.z  # -1..1
+        k = (1 - abs(t) ** power) ** (1 / power)  # 超椭圆：两端更平
+        r = r_bottom + (r_top - r_bottom) * (t + 1) / 2
+        rho = math.hypot(v.co.x, v.co.y)
+        s = (k * r / rho) if rho > 1e-9 else 0.0
+        v.co = Vector((center[0] + v.co.x * s, center[1] + v.co.y * s * depth, z0 + half + t * half))
+    return part.finish(o, material, name)
+
+
+def smooth_border(bm, iterations=20, project=True):
+    """把挖洞后留下的锯齿边界磨圆；project=True 时再投影回单位球面。"""
+    border = {v for e in bm.edges if e.is_boundary for v in e.verts}
+    for _ in range(iterations):
+        moved = {}
+        for v in border:
+            nb = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
+            if len(nb) == 2:
+                co = v.co * 0.5 + (nb[0].co + nb[1].co) * 0.25
+                moved[v] = co.normalized() if project else co
+        for v, co in moved.items():
+            v.co = co
+
+
 STRAW = {}
 
 
