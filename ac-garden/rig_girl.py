@@ -67,6 +67,8 @@ def load_mesh(path):
     height = hi[2] - lo[2]
     co = (co - np.array([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, lo[2]])) / height
     obj.data.vertices.foreach_set("co", co.astype(np.float32).ravel())
+    # AI 生成的模型没有法线，导入后默认平面着色，导出时每个三角面都会拆成独立顶点（体积翻好几倍）
+    obj.data.polygons.foreach_set("use_smooth", [True] * len(obj.data.polygons))
     obj.data.update()
     obj.name = "Girl"
     return obj, co
@@ -199,8 +201,11 @@ def skin(obj, rig, L, co):
     th = L["torso_half"]
     only(z > neck + 0.02, {"Head", "Neck"})
     for s, side in ((-1, "R"), (1, "L")):
-        only((x * s > th * 0.95) & (z > c) & (z < neck), {f"UpperArm.{side}", f"LowerArm.{side}", f"Hand.{side}", "Spine"})
-        only((z < c - 0.02) & (x * s > 0), {f"UpperLeg.{side}", f"LowerLeg.{side}", f"Foot.{side}", "Hips"})
+        # 手臂：躯干宽度以外、脖子以下（垂下来的拳头可能低于胯部，也要算进手臂）
+        only((x * s > th * 0.95) & (z < neck), {f"UpperArm.{side}", f"LowerArm.{side}", f"Hand.{side}", "Spine"})
+        # 腿：胯以下且在躯干宽度以内
+        only((z < c - 0.02) & (x * s > 0) & (np.abs(x) <= th * 0.95),
+             {f"UpperLeg.{side}", f"LowerLeg.{side}", f"Foot.{side}", "Hips"})
     only((np.abs(x) <= th * 0.95) & (z > c - 0.02) & (z <= neck + 0.02), {"Hips", "Spine", "Neck", "UpperLeg.R", "UpperLeg.L"})
 
     W = np.where(allowed, 1.0 / (D + 0.01) ** 4, 0.0)
@@ -273,29 +278,47 @@ X, Y, Z = (1, 0, 0), (0, 1, 0), (0, 0, 1)
 
 
 def animations(rig):
+    """第一批动作，节奏参照动森主人公：走路一颠一颠、手臂大幅摆动、头跟着轻晃。"""
     acts = []
-    # 待机：轻微呼吸、头左右歪一点、手臂微摆（2 秒循环）
-    k = {}
-    for f, t in ((0, 0), (15, 1), (30, 0), (45, -1), (60, 0)):
-        k[f] = {"Spine": [(X, 1.5 * abs(t))], "Head": [(Y, 3 * t)],
-                "UpperArm.L": [(Y, 2 * t)], "UpperArm.R": [(Y, 2 * t)],
-                "Hips": ("loc", (0, 0, -0.004 * abs(t)))}
-    acts.append(make_action(rig, "Idle", 60, k))
 
-    # 走路：腿前后摆、膝盖弯、手臂反向摆、身体上下起伏（1 秒循环）
+    # 待机（3 秒循环）：呼吸起伏，中途往左、往右各张望一次
     k = {}
-    for f in range(0, 31, 5):
-        ph = f / 30 * math.tau
+    for f, breath, look in ((0, 0, 0), (15, 1, 0), (30, 0, 1), (45, 1, 1), (55, 0, 0),
+                            (65, 1, -1), (80, 0, -1), (90, 0, 0)):
+        k[f] = {"Spine": [(X, 1.5 * breath)], "Head": [(Z, 18 * look), (X, -2 * breath)],
+                "UpperArm.L": [(Y, -3 * breath)], "UpperArm.R": [(Y, 3 * breath)],
+                "Hips": ("loc", (0, 0, -0.004 * breath))}
+    acts.append(make_action(rig, "Idle", 90, k))
+
+    # 走路（0.8 秒一个循环）：一步一颠，胳膊大幅前后摆，身体略前倾
+    k = {}
+    n = 24
+    for f in range(0, n + 1, 2):
+        ph = f / n * math.tau
         sw = math.sin(ph)
-        k[f] = {"UpperLeg.L": [(X, 28 * sw)], "UpperLeg.R": [(X, -28 * sw)],
-                "LowerLeg.L": [(X, -25 * max(0, -sw))], "LowerLeg.R": [(X, -25 * max(0, sw))],
-                "UpperArm.L": [(X, -22 * sw)], "UpperArm.R": [(X, 22 * sw)],
-                "LowerArm.L": [(X, -15)], "LowerArm.R": [(X, -15)],
-                "Spine": [(Z, 4 * sw)], "Head": [(Z, -3 * sw)],
-                "Hips": ("loc", (0, 0, 0.012 * abs(math.cos(ph))))}
-    acts.append(make_action(rig, "Walk", 30, k))
+        k[f] = {"UpperLeg.L": [(X, -30 * sw)], "UpperLeg.R": [(X, 30 * sw)],
+                "LowerLeg.L": [(X, 35 * max(0, sw))], "LowerLeg.R": [(X, 35 * max(0, -sw))],
+                "UpperArm.L": [(X, 35 * sw)], "UpperArm.R": [(X, -35 * sw)],
+                "LowerArm.L": [(X, -20)], "LowerArm.R": [(X, -20)],
+                "Spine": [(X, 5), (Z, 5 * sw)], "Head": [(Z, -4 * sw), (X, -3)],
+                "Hips": ("loc", (0, 0, 0.018 * abs(math.sin(ph))))}
+    acts.append(make_action(rig, "Walk", n, k))
 
-    # 采摘：蹲下、身体前倾、右手往前下方伸、再站起来（2 秒）
+    # 小跑（0.5 秒一个循环）：步子更大，胳膊弯着前后摆，身体更前倾，起伏更大
+    k = {}
+    n = 16
+    for f in range(0, n + 1, 2):
+        ph = f / n * math.tau
+        sw = math.sin(ph)
+        k[f] = {"UpperLeg.L": [(X, -45 * sw)], "UpperLeg.R": [(X, 45 * sw)],
+                "LowerLeg.L": [(X, 70 * max(0, sw) + 10)], "LowerLeg.R": [(X, 70 * max(0, -sw) + 10)],
+                "UpperArm.L": [(X, 50 * sw)], "UpperArm.R": [(X, -50 * sw)],
+                "LowerArm.L": [(X, -75)], "LowerArm.R": [(X, -75)],
+                "Spine": [(X, 12), (Z, 6 * sw)], "Head": [(X, -8)],
+                "Hips": ("loc", (0, 0, 0.03 * abs(math.sin(ph))))}
+    acts.append(make_action(rig, "Run", n, k))
+
+    # 采摘（2 秒）：蹲下、身体前倾、右手往前下方伸、再站起来
     k = {}
     for f, t in ((0, 0), (15, 1), (30, 1), (40, 1), (60, 0)):
         reach = 1 if f in (30,) else (0.5 if f in (15, 40) else 0)
@@ -310,14 +333,32 @@ def animations(rig):
             k[f]["LowerArm.R"] = ("aim", (0.05, -0.45 - 0.15 * reach, -0.88))
     acts.append(make_action(rig, "Pick", 60, k))
 
-    # 偷吃：右手把草莓送到嘴边，头往前点两下（2 秒）
+    # 偷吃（2 秒）：上臂几乎水平往前，前臂往上内收，拳头停在嘴前，头点两下
     k = {}
-    for f, t, nod in ((0, 0, 0), (15, 1, 0), (25, 1, 1), (35, 1, 0), (45, 1, 1), (60, 0, 0)):
+    for f, t, nod in ((0, 0, 0), (12, 1, 0), (22, 1, 1), (32, 1, 0), (42, 1, 1), (60, 0, 0)):
         k[f] = {"Head": [(X, 8 * nod)], "Spine": [(X, 3 * t)]}
         if t:
-            k[f]["UpperArm.R"] = ("aim", (0.25, -0.75, -0.6))
-            k[f]["LowerArm.R"] = ("aim", (0.28, -0.55, 0.79))
+            k[f]["UpperArm.R"] = ("aim", (0.3, -0.95, -0.1))
+            k[f]["LowerArm.R"] = ("aim", (0.25, -0.45, 0.86))
     acts.append(make_action(rig, "Eat", 60, k))
+
+    # 被发现（1.2 秒，不循环）：吓得原地一跳、双手举起，落地后双手捂脸定住，再慢慢放下
+    k = {}
+    for f, hop, up, cover in ((0, 0, 0, 0), (5, 1, 1, 0), (10, 0.3, 1, 0), (16, 0, 0, 1),
+                              (28, 0, 0, 1), (36, 0, 0, 0)):
+        k[f] = {"Hips": ("loc", (0, 0, 0.05 * hop - 0.02 * cover)),
+                "Head": [(X, -12 * up + 6 * cover)], "Spine": [(X, -6 * up + 4 * cover)],
+                "UpperLeg.L": [(X, -15 * cover)], "UpperLeg.R": [(X, -15 * cover)],
+                "LowerLeg.L": [(X, 25 * cover + 20 * hop)], "LowerLeg.R": [(X, 25 * cover + 20 * hop)]}
+        for s, side in ((-1, "R"), (1, "L")):
+            if up:
+                k[f][f"UpperArm.{side}"] = ("aim", (0.55 * s, -0.2, 0.8))
+                k[f][f"LowerArm.{side}"] = ("aim", (0.45 * s, -0.2, 0.87))
+            elif cover:
+                k[f][f"UpperArm.{side}"] = ("aim", (0.25 * s, -0.95, -0.15))
+                k[f][f"LowerArm.{side}"] = ("aim", (-0.3 * s, -0.4, 0.86))
+    acts.append(make_action(rig, "Caught", 36, k))
+
     rig.animation_data.action = acts[0]
     return acts
 
@@ -341,7 +382,8 @@ def preview(rig, obj, out_dir):
     scene.camera = cam
     for act in bpy.data.actions:
         rig.animation_data.action = act
-        for f in (0, int(act.frame_range[1] // (4 if act.name == "Walk" else 2))):
+        mid = {"Walk": 6, "Run": 4, "Idle": 35, "Caught": 5}.get(act.name, int(act.frame_range[1] // 2))
+        for f in (mid,):
             scene.frame_set(f)
             for bn in ("UpperArm.R", "LowerArm.R", "UpperLeg.R"):
                 pb = rig.pose.bones[bn]
@@ -363,8 +405,10 @@ def main():
         o.select_set(False)
     rig.select_set(True)
     obj.select_set(True)
+    # 贴图转成 JPEG，模型文件能小很多（网页加载快）
     bpy.ops.export_scene.gltf(filepath=DST, export_format="GLB", use_selection=True,
-                              export_animation_mode="ACTIONS", export_force_sampling=True)
+                              export_animation_mode="ACTIONS", export_force_sampling=True,
+                              export_image_format="JPEG", export_image_quality=85)
     print("导出:", DST, f"{os.path.getsize(DST) / 1e6:.1f} MB")
 
 
