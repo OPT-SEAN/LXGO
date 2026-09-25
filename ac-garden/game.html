@@ -1,0 +1,545 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>草莓园偷吃记</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&family=ZCOOL+KuaiLe&display=swap">
+<style>
+  :root {
+    --sky: #9fd3fb;
+    --ink: #3b2f22;
+    --ink-soft: #6d5d49;
+    --cream: rgba(255, 250, 236, 0.92);
+    --board: #2f4a3c;
+    --chalk: #f6f2e6;
+    --berry: #e3342f;
+    --leaf: #4f9a3c;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; overflow: hidden; background: var(--sky); color: var(--ink);
+    font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+  .hud {
+    position: fixed; left: 0; right: 0; top: 0; z-index: 2; pointer-events: none;
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 0;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;
+  }
+  .board {
+    background: var(--board); color: var(--chalk);
+    border: 5px solid #b8804a; border-radius: 10px;
+    padding: 8px 14px 10px; display: grid; gap: 2px; min-width: 120px;
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.15);
+  }
+  .board .label { font-family: "ZCOOL KuaiLe", sans-serif; font-size: 15px; letter-spacing: 0.12em; }
+  .board .count { font-family: "ZCOOL KuaiLe", sans-serif; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .board .count b { color: #f47c7c; font-weight: 400; }
+  .pouch {
+    background: var(--cream); border-radius: 16px; padding: 8px 12px;
+    display: grid; gap: 4px; font-size: 13px; color: var(--ink-soft);
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.08);
+  }
+  .pouch div { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+  .pouch b { color: var(--ink); font-size: 18px; font-variant-numeric: tabular-nums; min-width: 1.4em; text-align: right; }
+  .berry-ico { width: 14px; height: 16px; flex: none; }
+
+  .actions {
+    position: fixed; left: 50%; transform: translateX(-50%); z-index: 2;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 18px);
+    display: flex; gap: 10px;
+  }
+  .actions button {
+    appearance: none; border: 0; cursor: pointer; border-radius: 999px;
+    padding: 12px 20px; min-width: 96px;
+    font: 700 16px/1 "Noto Sans SC", sans-serif; letter-spacing: 0.08em;
+    color: var(--ink); background: var(--cream);
+    box-shadow: 0 4px 0 rgba(0, 0, 0, 0.12);
+  }
+  .actions button kbd { font: 500 11px/1 "Noto Sans SC", sans-serif; opacity: 0.55; margin-left: 4px; }
+  .actions button.pick { background: #ffe07a; }
+  .actions button:disabled { opacity: 0.45; cursor: default; }
+  .actions button:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+
+  .toast {
+    position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 3;
+    max-width: calc(100% - 32px); box-sizing: border-box; text-align: center;
+    background: var(--cream); border-radius: 18px; padding: 12px 18px;
+    font-family: "ZCOOL KuaiLe", sans-serif; font-size: 22px; letter-spacing: 0.05em;
+    box-shadow: 0 6px 0 rgba(0, 0, 0, 0.1);
+    pointer-events: none; transition: opacity 0.3s;
+  }
+  .toast small { display: block; font-family: "Noto Sans SC", sans-serif; font-size: 13px; color: var(--ink-soft); margin-top: 4px; letter-spacing: 0; }
+  .bubble {
+    position: fixed; z-index: 2; transform: translate(-50%, -100%); pointer-events: none;
+    font-family: "ZCOOL KuaiLe", sans-serif; font-size: 34px; color: var(--berry);
+    background: #fff; border-radius: 50%; width: 46px; height: 46px; display: grid; place-items: center;
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.12);
+  }
+  .help {
+    position: fixed; left: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); z-index: 2;
+    max-width: calc(100% - 32px); box-sizing: border-box;
+    background: var(--cream); border-radius: 12px; padding: 8px 12px;
+    font-size: 12px; line-height: 1.7; color: var(--ink-soft); pointer-events: none;
+  }
+  .help b { color: var(--ink); font-weight: 500; }
+  .end {
+    position: fixed; inset: 0; z-index: 4; display: grid; place-items: center; padding: 16px;
+    background: rgba(159, 211, 251, 0.45);
+  }
+  .end .card {
+    width: 100%; max-width: 340px; box-sizing: border-box; background: var(--cream); border-radius: 22px;
+    padding: 24px 22px; text-align: center; display: grid; gap: 10px; box-shadow: 0 8px 0 rgba(0, 0, 0, 0.1);
+  }
+  .end h2 { margin: 0; font-family: "ZCOOL KuaiLe", sans-serif; font-weight: 400; font-size: 30px; }
+  .end p { margin: 0; color: var(--ink-soft); line-height: 1.7; }
+  .end button {
+    appearance: none; border: 0; cursor: pointer; border-radius: 999px; padding: 12px 20px;
+    font: 700 16px/1 "Noto Sans SC", sans-serif; background: #ffe07a; color: var(--ink);
+  }
+  #status {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5;
+    background: var(--cream); border-radius: 14px; padding: 12px 18px; font-size: 14px; color: var(--ink-soft);
+    max-width: calc(100% - 32px); box-sizing: border-box;
+  }
+</style>
+
+<canvas id="view"></canvas>
+
+<div class="hud">
+  <div class="board">
+    <span class="label">今日采摘</span>
+    <span class="count"><b id="picked">0</b> / <span id="goal">20</span></span>
+  </div>
+  <div class="pouch">
+    <div>篮子里 <svg class="berry-ico" viewBox="0 0 14 16" aria-hidden="true"><path d="M7 3c4 0 6 2.5 6 5.5S9.5 16 7 16 1 11.5 1 8.5 3 3 7 3z" fill="#e3342f"/><path d="M3 3.5 7 5l4-1.5L9 1 7 2.5 5 1z" fill="#4f9a3c"/></svg><b id="basket">0</b></div>
+    <div>偷吃了 <b id="eaten">0</b></div>
+  </div>
+</div>
+
+<div id="help" class="help">
+  <b>WASD / 方向键</b> 走路 · 按住 <b>Shift</b> 小跑 · <b>E</b> 采摘 · <b>Q</b> 偷吃<br>
+  手机：点地面走过去，点草莓自动去摘
+</div>
+
+<div class="actions">
+  <button id="btnPick" class="pick" type="button">采摘<kbd>E</kbd></button>
+  <button id="btnEat" type="button" disabled>偷吃<kbd>Q</kbd></button>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+<div id="bubble" class="bubble" hidden>!</div>
+<div id="end" class="end" hidden>
+  <div class="card">
+    <h2>今日采摘完成！</h2>
+    <p id="endText"></p>
+    <button id="again" type="button">再摘一轮</button>
+  </div>
+</div>
+<div id="status">草莓园加载中…</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+(() => {
+  // 模型路径（仓库里用 glb；发布成网页时会换成同名的 .json）
+  const ASSETS = { garden: 'output/garden.glb', girl: 'models/girl_rigged.glb' };
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('view');
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.95;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const SKY = 0x9fd3fb;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(SKY);
+  scene.fog = new THREE.Fog(new THREE.Color(SKY).convertSRGBToLinear(), 7, 15);
+
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.05, 60);
+  scene.add(new THREE.HemisphereLight(0xe2f2ff, 0x6fa24a, 0.55));
+  const sun = new THREE.DirectionalLight(0xfff1d6, 1.2);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 4, bottom: -4, near: 0.5, far: 20 });
+  sun.shadow.bias = -0.0006;
+  scene.add(sun, sun.target);
+
+  // ---------- 场景布局（与 Blender 的 garden.py 一致；坐标换算 Blender(x,y,z) -> three(x,z,-y)） ----------
+  const BEDS = [[-1.05, 0.85], [1.05, 0.85], [-1.05, -0.35]].map(([x, y]) => ({ x, z: -y, hw: 0.67, hd: 0.25 }));
+  const OBSTACLES = [{ x: 1.55, z: -0.05, r: 0.28 }, { x: -0.75, z: -1.28, r: 0.08 }, { x: -0.35, z: -1.28, r: 0.08 }];
+  const BOUNDS = { x0: -2.45, x1: 2.45, z0: -1.33, z1: 1.9 };
+  const RADIUS = 0.12;
+
+  // ---------- 可以摘的草莓 ----------
+  const berryGeo = (() => {
+    const g = new THREE.SphereGeometry(1, 16, 12);
+    const p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const f = y < 0 ? 1 + 0.5 * y : 1 - 0.15 * y * y;
+      p.setXYZ(i, x * f, y < 0 ? y * 1.15 : y * 0.9, z * f);
+    }
+    g.computeVertexNormals();
+    return g;
+  })();
+  const berryMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0xe3342f).convertSRGBToLinear(), roughness: 0.35 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(0x4f9a3c).convertSRGBToLinear(), roughness: 0.7 });
+  const leafGeo = new THREE.SphereGeometry(1, 8, 6);
+
+  function makeBerry() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(berryGeo, berryMat.clone());
+    body.castShadow = true;
+    g.add(body);
+    for (let k = 0; k < 5; k++) {
+      const a = k / 5 * Math.PI * 2;
+      const leaf = new THREE.Mesh(leafGeo, leafMat);
+      leaf.scale.set(0.16, 0.06, 0.42);
+      leaf.position.set(Math.cos(a) * 0.32, 0.9, Math.sin(a) * 0.32);
+      leaf.rotation.y = -a + Math.PI / 2;
+      leaf.rotation.x = 0.35;
+      g.add(leaf);
+    }
+    g.scale.setScalar(0.035);
+    return g;
+  }
+
+  let berries = [];
+  function spawnBerries() {
+    berries.forEach((b) => scene.remove(b.mesh));
+    berries = [];
+    // 每个种植床 5 株，株距与 garden.py 相同；每株 1 颗，前排再多挂 5 颗，一共 20 颗
+    BEDS.forEach((bed, bi) => {
+      for (let i = 0; i < 5; i++) {
+        const x = bed.x - 0.49 + i * 0.245;
+        const spots = [[0, 0.1]];
+        if (bi === 2) spots.push([0.06, -0.1]);
+        spots.forEach(([dx, dz]) => {
+          const m = makeBerry();
+          m.position.set(x + dx, 0.2, bed.z + dz);
+          m.rotation.y = Math.random() * Math.PI * 2;
+          scene.add(m);
+          berries.push({ mesh: m, alive: true, phase: Math.random() * 6 });
+        });
+      }
+    });
+    $('goal').textContent = berries.length;
+  }
+
+  // ---------- 女孩 ----------
+  let girl = null, mixer = null;
+  const actions = {};
+  const state = { mode: 'idle', heading: 0, target: null, autoPick: null, busyUntil: 0 };
+  const stats = { picked: 0, basket: 0, eaten: 0 };
+
+  function play(name, fade = 0.2) {
+    const next = actions[name];
+    if (!next || state.anim === name) return next;
+    const prev = actions[state.anim];
+    next.reset().play();
+    if (prev) prev.crossFadeTo(next, fade, false);
+    state.anim = name;
+    return next;
+  }
+
+  function playOnce(name, onDone) {
+    const act = actions[name];
+    act.setLoop(THREE.LoopOnce, 1);
+    act.clampWhenFinished = true;
+    const prev = actions[state.anim];
+    act.reset().play();
+    if (prev && prev !== act) prev.crossFadeTo(act, 0.15, false);
+    state.anim = name;
+    const done = (e) => {
+      if (e.action !== act) return;
+      mixer.removeEventListener('finished', done);
+      onDone && onDone();
+      state.mode = 'idle';
+      play('Idle', 0.25);
+    };
+    mixer.addEventListener('finished', done);
+    return act.getClip().duration;
+  }
+
+  // ---------- 输入 ----------
+  const keys = new Set();
+  addEventListener('keydown', (e) => {
+    keys.add(e.code);
+    if (e.code === 'KeyE' || e.code === 'Space') { tryPick(); e.preventDefault(); }
+    if (e.code === 'KeyQ') tryEat();
+    if (e.code.startsWith('Arrow')) e.preventDefault();
+  });
+  addEventListener('keyup', (e) => keys.delete(e.code));
+  addEventListener('blur', () => keys.clear());
+  $('btnPick').addEventListener('click', () => tryPick());
+  $('btnEat').addEventListener('click', () => tryEat());
+
+  const ray = new THREE.Raycaster();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  canvas.addEventListener('pointerdown', (e) => {
+    if (!girl || busy()) return;
+    const ndc = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hits = ray.intersectObjects(berries.filter((b) => b.alive).map((b) => b.mesh), true);
+    if (hits.length) {
+      const b = berries.find((bb) => bb.mesh === hits[0].object.parent || bb.mesh === hits[0].object);
+      if (b) { state.target = b.mesh.position.clone(); state.autoPick = b; return; }
+    }
+    const p = new THREE.Vector3();
+    if (ray.ray.intersectPlane(groundPlane, p)) { state.target = p; state.autoPick = null; }
+  });
+
+  // ---------- 玩法 ----------
+  const busy = () => ['pick', 'eat', 'caught'].includes(state.mode);
+
+  function nearestBerry(maxDist = 0.62) {
+    let best = null, bd = maxDist;
+    for (const b of berries) {
+      if (!b.alive) continue;
+      const d = Math.hypot(b.mesh.position.x - girl.position.x, b.mesh.position.z - girl.position.z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
+  }
+
+  function faceTo(p) {
+    state.heading = Math.atan2(p.x - girl.position.x, p.z - girl.position.z);
+  }
+
+  function tryPick() {
+    if (!girl || busy()) return;
+    const b = nearestBerry();
+    if (!b) { toast('附近没有草莓', '走到种植床边上再摘'); return; }
+    faceTo(b.mesh.position);
+    state.mode = 'pick';
+    state.target = null;
+    const dur = playOnce('Pick');
+    b.alive = false;
+    b.flyAt = performance.now() + dur * 1000 * 0.45;
+    b.flyDur = 350;
+  }
+
+  function tryEat() {
+    if (!girl || busy()) return;
+    if (stats.basket <= 0) { toast('篮子是空的', '先去摘几颗'); return; }
+    state.mode = 'eat';
+    state.target = null;
+    const dur = playOnce('Eat', () => {
+      // 偷吃完有 35% 的概率被发现
+      if (Math.random() < 0.35) caught();
+    });
+    setTimeout(() => {
+      stats.basket--; stats.eaten++; updateHud();
+      toast('好甜！', '偷偷吃掉了一颗');
+    }, dur * 1000 * 0.4);
+  }
+
+  function caught() {
+    state.mode = 'caught';
+    playOnce('Caught', () => { $('bubble').hidden = true; });
+    $('bubble').hidden = false;
+    toast('被发现了！', '「请勿偷吃！」——快装作什么都没发生');
+  }
+
+  function updateHud() {
+    $('picked').textContent = stats.picked;
+    $('basket').textContent = stats.basket;
+    $('eaten').textContent = stats.eaten;
+    $('btnEat').disabled = stats.basket <= 0;
+    if (stats.picked >= berries.length && berries.length) {
+      setTimeout(() => {
+        $('endText').textContent = stats.eaten
+          ? `一共摘了 ${stats.picked} 颗，其中偷吃了 ${stats.eaten} 颗。篮子里还剩 ${stats.basket} 颗。`
+          : `一共摘了 ${stats.picked} 颗，一颗都没偷吃，真乖！`;
+        $('end').hidden = false;
+      }, 1600);
+    }
+  }
+
+  $('again').addEventListener('click', () => {
+    Object.assign(stats, { picked: 0, basket: 0, eaten: 0 });
+    spawnBerries();
+    updateHud();
+    $('end').hidden = true;
+  });
+
+  let toastTimer = 0;
+  function toast(title, sub) {
+    const t = $('toast');
+    t.innerHTML = '';
+    t.append(title);
+    if (sub) { const s = document.createElement('small'); s.textContent = sub; t.append(s); }
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 1800);
+  }
+
+  // ---------- 移动与碰撞 ----------
+  function blocked(x, z) {
+    if (x < BOUNDS.x0 || x > BOUNDS.x1 || z < BOUNDS.z0 || z > BOUNDS.z1) return true;
+    for (const b of BEDS) {
+      if (Math.abs(x - b.x) < b.hw + RADIUS && Math.abs(z - b.z) < b.hd + RADIUS) return true;
+    }
+    for (const o of OBSTACLES) {
+      if (Math.hypot(x - o.x, z - o.z) < o.r + RADIUS) return true;
+    }
+    return false;
+  }
+
+  function move(dx, dz, dt, running) {
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-3) return false;
+    const speed = running ? 1.7 : 0.85;
+    const sx = dx / len * speed * dt, sz = dz / len * speed * dt;
+    const p = girl.position;
+    // 分轴移动：撞墙时还能沿着墙滑
+    if (!blocked(p.x + sx, p.z)) p.x += sx;
+    if (!blocked(p.x, p.z + sz)) p.z += sz;
+    state.heading = Math.atan2(dx, dz);
+    return true;
+  }
+
+  function angleLerp(a, b, t) {
+    let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+    if (d < -Math.PI) d += Math.PI * 2;
+    return a + d * t;
+  }
+
+  // ---------- 加载 ----------
+  // 页面的安全策略不允许 fetch() 读 blob: 地址，r128 的 GLTFLoader 在 Chrome 里会用
+  // fetch + createImageBitmap 读内嵌贴图；临时隐藏 createImageBitmap，让它改用 <img>。
+  const cib = window.createImageBitmap;
+  window.createImageBitmap = undefined;
+  const loader = new THREE.GLTFLoader();
+  let loaded = 0;
+  const bump = () => { $('status').textContent = `草莓园加载中… ${++loaded}/2`; };
+  Promise.all([
+    loader.loadAsync(ASSETS.garden).then((g) => {
+      g.scene.traverse((o) => { if (o.isMesh) { o.receiveShadow = true; o.castShadow = true; } });
+      scene.add(g.scene);
+      bump();
+    }),
+    loader.loadAsync(ASSETS.girl).then((g) => {
+      girl = g.scene;
+      girl.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+      girl.position.set(0, 0, 0.9);
+      scene.add(girl);
+      mixer = new THREE.AnimationMixer(girl);
+      g.animations.forEach((clip) => { actions[clip.name] = mixer.clipAction(clip); });
+      play('Idle');
+      bump();
+    }),
+  ]).then(() => {
+    $('status').hidden = true;
+    spawnBerries();
+    updateHud();
+    setTimeout(() => { $('help').hidden = true; }, 9000);
+  }).catch((err) => {
+    $('status').textContent = '加载失败：' + (err && err.message ? err.message : err);
+  }).finally(() => { window.createImageBitmap = cib; });
+
+  // ---------- 主循环 ----------
+  const camOffset = new THREE.Vector3(0, 2.2, 3.4);
+  const camPos = new THREE.Vector3(0, 2.2, 4.3);
+  const look = new THREE.Vector3();
+  let last = performance.now();
+
+  function resize() {
+    const w = canvas.clientWidth || innerWidth, h = canvas.clientHeight || innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.fov = w / h < 0.8 ? 52 : 35;
+    camera.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize);
+  resize();
+
+  function tick(now) {
+    requestAnimationFrame(tick);
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (girl) {
+      if (!busy()) {
+        let dx = 0, dz = 0;
+        if (keys.has('KeyW') || keys.has('ArrowUp')) dz -= 1;
+        if (keys.has('KeyS') || keys.has('ArrowDown')) dz += 1;
+        if (keys.has('KeyA') || keys.has('ArrowLeft')) dx -= 1;
+        if (keys.has('KeyD') || keys.has('ArrowRight')) dx += 1;
+        const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+        let moving = false;
+        if (dx || dz) {
+          state.target = null;
+          moving = move(dx, dz, dt, running);
+        } else if (state.target) {
+          const tx = state.target.x - girl.position.x, tz = state.target.z - girl.position.z;
+          const reach = state.autoPick ? 0.45 : 0.06;
+          if (Math.hypot(tx, tz) > reach) {
+            const before = girl.position.clone();
+            moving = move(tx, tz, dt, Math.hypot(tx, tz) > 1.2);
+            if (girl.position.distanceTo(before) < 1e-4) { state.target = null; moving = false; }
+          } else {
+            state.target = null;
+            if (state.autoPick) { state.autoPick = null; tryPick(); }
+          }
+        }
+        if (!busy()) {
+          const runAnim = moving && (keys.has('ShiftLeft') || keys.has('ShiftRight') ||
+            (state.target && Math.hypot(state.target.x - girl.position.x, state.target.z - girl.position.z) > 1.2));
+          play(moving ? (runAnim ? 'Run' : 'Walk') : 'Idle');
+        }
+      }
+      girl.rotation.y = angleLerp(girl.rotation.y, state.heading, Math.min(1, dt * 12));
+      mixer.update(dt);
+
+      // 镜头：动森式斜俯视，平滑跟随
+      const want = girl.position.clone().add(camOffset);
+      camPos.lerp(want, Math.min(1, dt * 3));
+      camera.position.copy(camPos);
+      look.lerp(girl.position.clone().add(new THREE.Vector3(0, 0.45, 0)), Math.min(1, dt * 4));
+      camera.lookAt(look);
+      sun.position.copy(girl.position).add(new THREE.Vector3(2.5, 5, 3.5));
+      sun.target.position.copy(girl.position);
+
+      // 附近的草莓一闪一闪；摘下的草莓飞进篮子
+      const near = busy() ? null : nearestBerry();
+      for (const b of berries) {
+        const body = b.mesh.children[0];
+        if (b.alive) {
+          const glow = b === near ? 0.35 + 0.25 * Math.sin(now / 150) : 0;
+          body.material.emissive.setRGB(glow, glow * 0.3, glow * 0.2);
+          b.mesh.position.y = 0.2 + Math.sin(now / 500 + b.phase) * 0.004;
+        } else if (b.flyAt && now >= b.flyAt) {
+          const t = Math.min(1, (now - b.flyAt) / b.flyDur);
+          const hand = girl.position.clone().add(new THREE.Vector3(0, 0.3, 0));
+          b.mesh.position.lerp(hand, t * 0.5);
+          b.mesh.scale.setScalar(0.035 * (1 - t));
+          if (t >= 1) {
+            scene.remove(b.mesh);
+            b.flyAt = 0;
+            stats.picked++; stats.basket++;
+            updateHud();
+          }
+        }
+      }
+
+      // 被发现时头顶冒「!」
+      if (!$('bubble').hidden) {
+        const head = girl.position.clone().add(new THREE.Vector3(0, 1.1, 0)).project(camera);
+        $('bubble').style.left = `${(head.x + 1) / 2 * innerWidth}px`;
+        $('bubble').style.top = `${(1 - head.y) / 2 * innerHeight}px`;
+      }
+    }
+    renderer.render(scene, camera);
+  }
+  requestAnimationFrame(tick);
+})();
+</script>
